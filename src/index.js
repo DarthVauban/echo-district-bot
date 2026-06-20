@@ -72,8 +72,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await command.execute(interaction, dependencies);
   } catch (error) {
-    if (error.code === 10062) {
-      logger.warn('Interaction expired (10062)', {
+    if (error.code === 10062 || error.code === 40060) {
+      logger.warn(`Interaction dead (${error.code})`, {
         command: interaction.commandName ?? interaction.customId ?? interaction.type,
       });
       return;
