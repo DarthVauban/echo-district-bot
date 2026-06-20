@@ -55,6 +55,8 @@ export class YouTubeAudioService {
       '15',
       '--extractor-retries',
       '2',
+      '--extractor-args',
+      'youtube:player_client=tv_embedded,ios',
       '--',
       url,
     ];
@@ -160,6 +162,8 @@ export class YouTubeAudioService {
         '15',
         '--extractor-retries',
         '3',
+        '--extractor-args',
+        'youtube:player_client=tv_embedded,ios',
         '-f',
         'bestaudio[acodec=opus]/bestaudio/best',
         '-o',
