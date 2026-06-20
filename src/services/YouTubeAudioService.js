@@ -29,10 +29,11 @@ function waitForSpawn(child, binaryName) {
 }
 
 export class YouTubeAudioService {
-  constructor({ ytDlpPath = 'yt-dlp', ffmpegPath = 'ffmpeg', metadataTimeoutMs = 30_000 } = {}) {
+  constructor({ ytDlpPath = 'yt-dlp', ffmpegPath = 'ffmpeg', metadataTimeoutMs = 30_000, cookiesFile = null } = {}) {
     this.ytDlpPath = ytDlpPath;
     this.ffmpegPath = ffmpegPath;
     this.metadataTimeoutMs = metadataTimeoutMs;
+    this.cookiesFile = cookiesFile;
   }
 
   validateUrl(url) {
@@ -55,6 +56,7 @@ export class YouTubeAudioService {
       '15',
       '--extractor-retries',
       '2',
+      ...(this.cookiesFile ? ['--cookies', this.cookiesFile] : []),
       '--',
       url,
     ];
@@ -160,6 +162,7 @@ export class YouTubeAudioService {
         '15',
         '--extractor-retries',
         '3',
+        ...(this.cookiesFile ? ['--cookies', this.cookiesFile] : []),
         '-f',
         'bestaudio[acodec=opus]/bestaudio/best',
         '-o',

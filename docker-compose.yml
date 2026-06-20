@@ -6,3 +6,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      YT_DLP_COOKIES_FILE: /app/cookies.txt
+    volumes:
+      - ./cookies.txt:/app/cookies.txt:ro

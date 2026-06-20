@@ -22,6 +22,7 @@ const client = new Client({
 const youtubeAudioService = new YouTubeAudioService({
   ytDlpPath: config.ytDlpPath,
   ffmpegPath: config.ffmpegPath,
+  cookiesFile: config.ytDlpCookiesFile,
 });
 const musicPlayer = new MusicPlayer(client, youtubeAudioService, {
   defaultVolume: config.defaultVolume,

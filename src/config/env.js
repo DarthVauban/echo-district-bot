@@ -30,6 +30,7 @@ export function getRuntimeConfig() {
     maxQueueSize: parseInteger('MAX_QUEUE_SIZE', 100, { min: 1, max: 1000 }),
     ytDlpPath: process.env.YT_DLP_PATH?.trim() || 'yt-dlp',
     ffmpegPath: process.env.FFMPEG_PATH?.trim() || 'ffmpeg',
+    ytDlpCookiesFile: process.env.YT_DLP_COOKIES_FILE?.trim() || null,
   };
 }
 
