@@ -36,6 +36,18 @@ client.once(Events.ClientReady, (readyClient) => {
     user: readyClient.user.tag,
     guilds: readyClient.guilds.cache.size,
   });
+
+  // Log every failed interaction callback so we can see the exact URL and status.
+  client.rest.on('response', (req, res) => {
+    if (req.path.includes('/interactions/') && res.status >= 400) {
+      logger.warn('REST interaction error', {
+        method: req.method,
+        // Truncate the token in the path for safety
+        path: req.path.replace(/\/interactions\/(\d+)\/([^/]{8})[^/]+\//, '/interactions/$1/$2…/'),
+        status: res.status,
+      });
+    }
+  });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
