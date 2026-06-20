@@ -68,22 +68,27 @@ export async function handleMusicButton(interaction, dependencies) {
     return false;
   }
 
+  logger.info('Button pressed', { button: interaction.customId, guildId: interaction.guildId });
+
   const { musicPlayer } = dependencies;
   await musicPlayer.attachControlPanel(interaction.guildId, interaction.message);
   assertCanControl(interaction, musicPlayer);
 
   if (interaction.customId === MUSIC_CONTROL_IDS.add) {
     await interaction.showModal(createAddTrackModal());
+    logger.info('Add modal shown', { guildId: interaction.guildId });
     return true;
   }
 
   if (interaction.customId === MUSIC_CONTROL_IDS.volumeCustom) {
     const currentVolume = musicPlayer.getSnapshot(interaction.guildId).volume;
     await interaction.showModal(createVolumeModal(currentVolume));
+    logger.info('Volume modal shown', { guildId: interaction.guildId });
     return true;
   }
 
   await interaction.deferUpdate();
+  logger.info('Button deferred', { button: interaction.customId, guildId: interaction.guildId });
 
   switch (interaction.customId) {
     case MUSIC_CONTROL_IDS.toggle: {
@@ -140,9 +145,9 @@ export async function handleMusicModal(interaction, dependencies) {
     return false;
   }
 
-  assertCanControl(interaction, dependencies.musicPlayer);
-
   if (interaction.customId === MUSIC_CONTROL_IDS.volumeModal) {
+    assertCanControl(interaction, dependencies.musicPlayer);
+
     const rawValue = interaction.fields
       .getTextInputValue(MUSIC_CONTROL_IDS.volumeInput)
       .trim();
@@ -165,10 +170,12 @@ export async function handleMusicModal(interaction, dependencies) {
     return true;
   }
 
+  // addModal: defer immediately before any other work
   const url = interaction.fields.getTextInputValue(MUSIC_CONTROL_IDS.urlInput).trim();
-  logger.info('Add track modal submitted', { guildId: interaction.guildId, url });
+  logger.info('Add modal submitted', { guildId: interaction.guildId, url });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  logger.info('Add track modal deferred', { guildId: interaction.guildId });
+  logger.info('Add modal deferred', { guildId: interaction.guildId });
+  assertCanControl(interaction, dependencies.musicPlayer);
 
   const { result, track } = await requestTrackFromInteraction(
     interaction,
