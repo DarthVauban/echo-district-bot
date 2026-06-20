@@ -156,7 +156,6 @@ export class MusicPlayer {
 
       state.voiceChannelId = null;
       state.textChannelId = null;
-      this.#syncProgressTimer(state);
       await this.refreshControlPanel(guildId);
       return hadPlayback;
     });
@@ -265,7 +264,6 @@ export class MusicPlayer {
     const state = this.getOrCreateState(guildId);
     state.controlPanelChannelId = message.channelId;
     state.controlPanelMessageId = message.id;
-    this.#syncProgressTimer(state);
   }
 
   async refreshControlPanel(guildId) {
@@ -287,7 +285,6 @@ export class MusicPlayer {
           state.controlPanelMessageId,
           this.createControlPanelPayload(guildId),
         );
-        this.#syncProgressTimer(state);
       } catch (error) {
         logger.warn('Could not update music control panel', {
           guildId,
@@ -295,7 +292,6 @@ export class MusicPlayer {
         });
         state.controlPanelChannelId = null;
         state.controlPanelMessageId = null;
-        this.#syncProgressTimer(state);
       }
     });
   }
@@ -329,7 +325,6 @@ export class MusicPlayer {
         state.controlPanelChannelId = newMessage.channelId;
         state.controlPanelMessageId = newMessage.id;
         state.textChannelId = newMessage.channelId;
-        this.#syncProgressTimer(state);
 
         if (oldMessageId && oldMessageId !== newMessage.id) {
           try {
@@ -366,48 +361,7 @@ export class MusicPlayer {
   }
 
   async shutdown() {
-    for (const state of this.guilds.values()) {
-      this.#stopProgressTimer(state);
-    }
-
     await Promise.allSettled([...this.guilds.keys()].map((guildId) => this.stop(guildId)));
-  }
-
-  #syncProgressTimer(state) {
-    const shouldRun = Boolean(
-      state.currentTrack
-      && !state.isPaused
-      && state.controlPanelChannelId
-      && state.controlPanelMessageId,
-    );
-
-    if (!shouldRun) {
-      this.#stopProgressTimer(state);
-      return;
-    }
-
-    if (state.progressTimer) {
-      return;
-    }
-
-    state.progressTimer = setInterval(() => {
-      this.refreshControlPanel(state.guildId).catch((error) => {
-        logger.warn('Progress update failed', {
-          guildId: state.guildId,
-          message: error.message,
-        });
-      });
-    }, 10_000);
-    state.progressTimer.unref?.();
-  }
-
-  #stopProgressTimer(state) {
-    if (!state.progressTimer) {
-      return;
-    }
-
-    clearInterval(state.progressTimer);
-    state.progressTimer = null;
   }
 
   /*
@@ -516,7 +470,6 @@ export class MusicPlayer {
 
         this.#watchPlaybackProcesses(state, state.playback);
         state.audioPlayer.play(resource);
-        this.#syncProgressTimer(state);
         void this.refreshControlPanel(state.guildId);
         logger.info('Started track', {
           guildId: state.guildId,
@@ -626,7 +579,6 @@ export class MusicPlayer {
           await this.#sendToTextChannel(state, '❌ Не вдалося отримати аудіо з наступного відео');
         }
 
-        this.#syncProgressTimer(state);
         await this.refreshControlPanel(state.guildId);
       }).catch((error) => {
         logger.error('Idle handler failed', { guildId: state.guildId, message: error.message });
