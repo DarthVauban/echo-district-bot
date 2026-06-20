@@ -38,20 +38,15 @@ client.once(Events.ClientReady, (readyClient) => {
     guilds: readyClient.guilds.cache.size,
   });
 
-  // Log every failed interaction callback so we can see the exact URL and status.
-  client.rest.on('response', async (req, res) => {
+  // Log every failed interaction callback so we can see the HTTP status.
+  // Keep this handler synchronous — reading res.body here races with @discordjs/rest's
+  // own body consumption and causes assert(!stream[kConsume]) crashes.
+  client.rest.on('response', (req, res) => {
     if (req.path.includes('/interactions/') && res.status >= 400) {
-      let body;
-      try {
-        body = typeof res.json === 'function' ? await res.json() : undefined;
-      } catch {
-        // ignore body parse errors
-      }
       logger.warn('REST interaction error', {
         method: req.method,
         path: req.path.replace(/\/interactions\/(\d+)\/([^/]{8})[^/]+\//, '/interactions/$1/$2…/'),
         status: res.status,
-        body,
       });
     }
   });
@@ -104,6 +99,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (error.code === 10062 || error.code === 40060) {
       logger.warn(`Interaction dead (${error.code})`, {
         command: interaction.commandName ?? interaction.customId ?? interaction.type,
+        httpStatus: error.status,
       });
       return;
     }
