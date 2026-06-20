@@ -145,26 +145,45 @@ export class YouTubeAudioService {
   async createAudioStream(url) {
     this.validateUrl(url);
 
-    const ytDlp = spawn(
-      this.ytDlpPath,
-      [
-        '--no-playlist',
-        '--no-warnings',
-        '--js-runtimes',
-        'node',
-        '--socket-timeout',
-        '15',
-        '--retries',
-        '3',
-        '--fragment-retries',
-        '3',
-        '-f',
-        'bestaudio/best',
-        '-o',
-        '-',
-        '--',
-        url,
-      ],
+    const source = await this.#getDirectAudioSource(url);
+    const ffmpegArgs = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_delay_max',
+      '5',
+      '-rw_timeout',
+      '15000000',
+    ];
+
+    if (source.userAgent) {
+      ffmpegArgs.push('-user_agent', source.userAgent);
+    }
+
+    if (source.referer) {
+      ffmpegArgs.push('-referer', source.referer);
+    }
+
+    ffmpegArgs.push(
+      '-i',
+      source.url,
+      '-vn',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-f',
+      's16le',
+      'pipe:1',
+    );
+
+    const ffmpeg = spawn(
+      this.ffmpegPath,
+      ffmpegArgs,
       {
         shell: false,
         windowsHide: true,
@@ -172,43 +191,12 @@ export class YouTubeAudioService {
       },
     );
 
-    const ffmpeg = spawn(
-      this.ffmpegPath,
-      [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-i',
-        'pipe:0',
-        '-vn',
-        '-ac',
-        '2',
-        '-ar',
-        '48000',
-        '-f',
-        's16le',
-        'pipe:1',
-      ],
-      {
-        shell: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      },
-    );
-
-    let ytDlpError = '';
     let ffmpegError = '';
     let cleanedUp = false;
 
-    ytDlp.stderr.on('data', (chunk) => {
-      ytDlpError = appendLimited(ytDlpError, chunk, MAX_ERROR_BYTES);
-    });
     ffmpeg.stderr.on('data', (chunk) => {
       ffmpegError = appendLimited(ffmpegError, chunk, MAX_ERROR_BYTES);
     });
-
-    ffmpeg.stdin.on('error', () => {});
-    ytDlp.stdout.pipe(ffmpeg.stdin);
 
     const cleanup = () => {
       if (cleanedUp) {
@@ -216,12 +204,6 @@ export class YouTubeAudioService {
       }
 
       cleanedUp = true;
-      ytDlp.stdout.unpipe(ffmpeg.stdin);
-      ffmpeg.stdin.destroy();
-
-      if (ytDlp.exitCode === null) {
-        ytDlp.kill();
-      }
 
       if (ffmpeg.exitCode === null) {
         ffmpeg.kill();
@@ -229,28 +211,16 @@ export class YouTubeAudioService {
     };
 
     try {
-      await Promise.all([
-        waitForSpawn(ytDlp, 'yt-dlp'),
-        waitForSpawn(ffmpeg, 'ffmpeg'),
-      ]);
+      await waitForSpawn(ffmpeg, 'ffmpeg');
 
       await new Promise((resolve, reject) => {
         const finish = (callback) => {
           clearTimeout(timeout);
           ffmpeg.stdout.off('readable', onReadable);
-          ytDlp.off('close', onYtDlpClose);
           ffmpeg.off('close', onFfmpegClose);
           callback();
         };
         const onReadable = () => finish(resolve);
-        const onYtDlpClose = (code) => {
-          if (code !== 0) {
-            finish(() => reject(new BotError(
-              'AUDIO_STREAM_FAILED',
-              ytDlpError.trim() || `yt-dlp exited with code ${code}.`,
-            )));
-          }
-        };
         const onFfmpegClose = (code) => finish(() => reject(new BotError(
           'AUDIO_STREAM_FAILED',
           ffmpegError.trim() || `ffmpeg exited before producing audio (code ${code}).`,
@@ -263,7 +233,6 @@ export class YouTubeAudioService {
         }, 20_000);
 
         ffmpeg.stdout.once('readable', onReadable);
-        ytDlp.once('close', onYtDlpClose);
         ffmpeg.once('close', onFfmpegClose);
       });
     } catch (error) {
@@ -273,14 +242,126 @@ export class YouTubeAudioService {
 
     return {
       stream: ffmpeg.stdout,
-      processes: { ytDlp, ffmpeg },
+      processes: { ffmpeg },
       cleanup,
       diagnostics() {
         return {
-          ytDlpError: ytDlpError.trim(),
           ffmpegError: ffmpegError.trim(),
+          sourceProtocol: source.protocol,
         };
       },
+    };
+  }
+
+  async #getDirectAudioSource(url) {
+    const child = spawn(
+      this.ytDlpPath,
+      [
+        '--dump-single-json',
+        '--skip-download',
+        '--no-playlist',
+        '--no-warnings',
+        '--js-runtimes',
+        'node',
+        '--socket-timeout',
+        '15',
+        '--extractor-retries',
+        '3',
+        '-f',
+        'bestaudio/best',
+        '--',
+        url,
+      ],
+      {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+
+    let stdout = '';
+    let stderr = '';
+    let tooLarge = false;
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length + chunk.length > MAX_METADATA_BYTES) {
+        tooLarge = true;
+        child.kill();
+        return;
+      }
+
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr = appendLimited(stderr, chunk, MAX_ERROR_BYTES);
+    });
+
+    const { code } = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        child.kill();
+        reject(new BotError('AUDIO_STREAM_FAILED', 'Audio URL extraction timed out.'));
+      }, this.metadataTimeoutMs);
+
+      child.once('error', (error) => {
+        clearTimeout(timeout);
+        reject(new BotError(
+          error.code === 'ENOENT' ? 'YT_DLP_NOT_FOUND' : 'AUDIO_STREAM_FAILED',
+          'Could not start yt-dlp for audio URL extraction.',
+          { cause: error },
+        ));
+      });
+
+      child.once('close', (exitCode) => {
+        clearTimeout(timeout);
+        resolve({ code: exitCode });
+      });
+    });
+
+    if (tooLarge || code !== 0) {
+      throw new BotError(
+        'AUDIO_STREAM_FAILED',
+        stderr.trim() || 'Could not extract the direct audio URL.',
+      );
+    }
+
+    let selected;
+
+    try {
+      selected = JSON.parse(stdout);
+    } catch (error) {
+      throw new BotError(
+        'AUDIO_STREAM_FAILED',
+        'yt-dlp returned invalid audio source JSON.',
+        { cause: error },
+      );
+    }
+
+    const mediaUrl = selected.url || selected.requested_downloads?.[0]?.url;
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(mediaUrl);
+    } catch {
+      throw new BotError('AUDIO_STREAM_FAILED', 'yt-dlp did not return a valid media URL.');
+    }
+
+    if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+      throw new BotError('AUDIO_STREAM_FAILED', 'Unsupported audio source protocol.');
+    }
+
+    const headers = selected.http_headers
+      || selected.requested_downloads?.[0]?.http_headers
+      || {};
+
+    return {
+      url: parsedUrl.toString(),
+      protocol: selected.protocol || parsedUrl.protocol.replace(':', ''),
+      userAgent: typeof headers['User-Agent'] === 'string'
+        ? headers['User-Agent'].replace(/[\r\n]/g, '')
+        : null,
+      referer: typeof headers.Referer === 'string'
+        ? headers.Referer.replace(/[\r\n]/g, '')
+        : null,
     };
   }
 }

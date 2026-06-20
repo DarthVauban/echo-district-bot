@@ -11,6 +11,7 @@ export class GuildQueue {
     this.textChannelId = null;
     this.voiceChannelId = null;
     this.playback = null;
+    this.endReason = null;
     this.controlPanelChannelId = null;
     this.controlPanelMessageId = null;
     this.progressTimer = null;

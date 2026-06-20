@@ -141,6 +141,7 @@ export class MusicPlayer {
         || state.audioPlayer.state.status !== AudioPlayerStatus.Idle;
 
       state.clear();
+      state.endReason = 'stop';
       state.currentTrack = null;
       state.isPaused = false;
       state.audioResource = null;
@@ -173,6 +174,7 @@ export class MusicPlayer {
         return false;
       }
 
+      state.endReason = 'skip';
       const stopped = state.audioPlayer.stop(true);
 
       if (!stopped) {
@@ -490,6 +492,7 @@ export class MusicPlayer {
       const track = state.dequeue();
       state.currentTrack = track;
       state.isPaused = false;
+      state.endReason = null;
 
       try {
         const pipeline = await this.youtubeAudioService.createAudioStream(track.url);
@@ -554,16 +557,35 @@ export class MusicPlayer {
     state.audioPlayer.on(AudioPlayerStatus.Idle, () => {
       state.runExclusive(async () => {
         if (state.currentTrack) {
-          logger.info('Finished track', {
+          const playedSeconds = Math.floor(
+            (state.audioResource?.playbackDuration ?? 0) / 1000,
+          );
+          const expectedSeconds = state.currentTrack.durationSeconds;
+          const endedPrematurely = (
+            !state.endReason
+            && Number.isFinite(expectedSeconds)
+            && playedSeconds + 15 < expectedSeconds
+          );
+          const details = {
             guildId: state.guildId,
             title: state.currentTrack.title,
-          });
+            playedSeconds,
+            expectedSeconds,
+            reason: state.endReason ?? (endedPrematurely ? 'premature-eof' : 'natural'),
+          };
+
+          if (endedPrematurely) {
+            logger.warn('Track ended prematurely', details);
+          } else {
+            logger.info('Finished track', details);
+          }
         }
 
         this.#cleanupPlayback(state);
         state.currentTrack = null;
         state.audioResource = null;
         state.isPaused = false;
+        state.endReason = null;
 
         try {
           await this.#startNext(state, { announce: true });
@@ -590,14 +612,17 @@ export class MusicPlayer {
 
       state.runExclusive(async () => {
         await this.#sendToTextChannel(state, '❌ Відтворення перервано через помилку аудіо');
+        state.endReason = 'player-error';
         state.audioPlayer.stop(true);
       }).catch(() => {});
     });
   }
 
   #watchPlaybackProcesses(state, playback) {
-    const reportFailure = (processName, code) => {
-      if (!playback.active || playback.errorReported || code === 0 || code === null) {
+    const reportFailure = (processName, code, signal) => {
+      const exitedSuccessfully = code === 0 && !signal;
+
+      if (!playback.active || playback.errorReported || exitedSuccessfully) {
         return;
       }
 
@@ -606,6 +631,7 @@ export class MusicPlayer {
       logger.error(`${processName} exited during playback`, {
         guildId: state.guildId,
         code,
+        signal,
         diagnostics,
       });
 
@@ -615,12 +641,27 @@ export class MusicPlayer {
         }
 
         await this.#sendToTextChannel(state, '❌ Не вдалося продовжити відтворення цього треку');
+        state.endReason = 'process-error';
         state.audioPlayer.stop(true);
       }).catch(() => {});
     };
 
-    playback.processes.ytDlp.once('close', (code) => reportFailure('yt-dlp', code));
-    playback.processes.ffmpeg.once('close', (code) => reportFailure('ffmpeg', code));
+    for (const [processName, child] of Object.entries(playback.processes)) {
+      child.once('close', (code, signal) => {
+        if (!playback.active) {
+          return;
+        }
+
+        logger.info('Playback process exited', {
+          guildId: state.guildId,
+          processName,
+          code,
+          signal,
+          diagnostics: playback.diagnostics(),
+        });
+        reportFailure(processName, code, signal);
+      });
+    }
   }
 
   #cleanupPlayback(state) {
