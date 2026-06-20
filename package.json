@@ -14,9 +14,6 @@
     "invite": "node src/generate-invite.js",
     "test": "node --test"
   },
-  "overrides": {
-    "undici": "6.27.0"
-  },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
     "discord.js": "14.26.4",

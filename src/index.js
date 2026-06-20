@@ -104,6 +104,18 @@ client.on(Events.Error, (error) => {
   logger.error('Discord client error', error);
 });
 
+client.on(Events.ShardDisconnect, (event, id) => {
+  logger.warn('Gateway disconnected', { shardId: id, code: event.code, reason: event.reason });
+});
+
+client.on(Events.ShardResume, (id, replayed) => {
+  logger.info('Gateway resumed', { shardId: id, replayedEvents: replayed });
+});
+
+client.on(Events.ShardReconnecting, (id) => {
+  logger.info('Gateway reconnecting', { shardId: id });
+});
+
 let shuttingDown = false;
 
 async function shutdown(signal) {
