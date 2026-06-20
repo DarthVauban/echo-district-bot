@@ -21,21 +21,10 @@ export const MUSIC_CONTROL_IDS = Object.freeze({
   volumeInput: 'music:volume',
 });
 
-export function formatProgressBar(elapsedSeconds, totalSeconds, size = 18) {
-  const safeSize = Math.max(5, Math.min(30, size));
-
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
-    return `🔘${'▬'.repeat(safeSize - 1)}`;
-  }
-
-  const ratio = Math.max(0, Math.min(1, elapsedSeconds / totalSeconds));
-  const markerIndex = Math.min(safeSize - 1, Math.floor(ratio * safeSize));
-
-  return `${'▬'.repeat(markerIndex)}🔘${'▬'.repeat(safeSize - markerIndex - 1)}`;
-}
-
 export function createMusicPanelPayload(snapshot) {
   const track = snapshot.currentTrack;
+  const hasTrack = Boolean(track);
+  const isPaused = hasTrack && snapshot.isPaused;
   const playbackDurationMs = Number.isFinite(snapshot.playbackDurationMs)
     ? snapshot.playbackDurationMs
     : 0;
@@ -43,8 +32,6 @@ export function createMusicPanelPayload(snapshot) {
   const totalSeconds = track?.durationSeconds ?? null;
   const elapsed = formatDuration(elapsedSeconds) ?? '0:00';
   const total = formatDuration(totalSeconds) ?? track?.duration ?? '?:??';
-  const hasTrack = Boolean(track);
-  const isPaused = hasTrack && snapshot.isPaused;
 
   const embed = new EmbedBuilder()
     .setColor(isPaused ? 0xf1c40f : hasTrack ? 0x5865f2 : 0x747f8d)
@@ -56,11 +43,9 @@ export function createMusicPanelPayload(snapshot) {
     )
     .addFields(
       {
-        name: 'Прогрес',
-        value: hasTrack
-          ? `${formatProgressBar(elapsedSeconds, totalSeconds)}\n\`${elapsed} / ${total}\``
-          : `${formatProgressBar(0, null)}\n\`0:00 / ?:??\``,
-        inline: false,
+        name: 'Час',
+        value: hasTrack ? `\`${elapsed} / ${total}\`` : `\`0:00 / ?:??\``,
+        inline: true,
       },
       {
         name: 'Гучність',
@@ -79,7 +64,7 @@ export function createMusicPanelPayload(snapshot) {
       },
     )
     .setFooter({
-      text: isPaused ? 'Відтворення на паузі' : hasTrack ? 'Оновлення кожні 10 секунд' : 'Очікування треку',
+      text: isPaused ? 'Відтворення на паузі' : hasTrack ? 'Відтворення' : 'Очікування треку',
     });
 
   if (track?.thumbnail) {
