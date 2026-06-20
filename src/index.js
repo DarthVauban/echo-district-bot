@@ -73,6 +73,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await command.execute(interaction, dependencies);
   } catch (error) {
+    if (error.code === 10062) {
+      return;
+    }
+
     logger.error('Command failed', {
       command: interaction.commandName ?? interaction.customId ?? interaction.type,
       guildId: interaction.guildId,
@@ -84,10 +88,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await respond(interaction, getPublicErrorMessage(error), { ephemeral: true });
     } catch (replyError) {
-      logger.error('Could not send command error response', {
-        command: interaction.commandName ?? interaction.customId ?? interaction.type,
-        message: replyError.message,
-      });
+      if (replyError.message !== 'Interaction has already been acknowledged.') {
+        logger.error('Could not send command error response', {
+          command: interaction.commandName ?? interaction.customId ?? interaction.type,
+          message: replyError.message,
+        });
+      }
     }
   }
 });
