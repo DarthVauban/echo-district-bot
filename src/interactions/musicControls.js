@@ -10,6 +10,7 @@ import { formatTrackTitle } from '../utils/formatters.js';
 import { getMemberVoiceChannel } from '../utils/interactions.js';
 import { MUSIC_CONTROL_IDS } from '../utils/musicPanel.js';
 import { requestTrackFromInteraction } from '../utils/trackRequests.js';
+import { logger } from '../utils/logger.js';
 
 function assertCanControl(interaction, musicPlayer) {
   const voiceChannel = getMemberVoiceChannel(interaction);
@@ -165,7 +166,9 @@ export async function handleMusicModal(interaction, dependencies) {
   }
 
   const url = interaction.fields.getTextInputValue(MUSIC_CONTROL_IDS.urlInput).trim();
+  logger.info('Add track modal submitted', { guildId: interaction.guildId, url });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  logger.info('Add track modal deferred', { guildId: interaction.guildId });
 
   const { result, track } = await requestTrackFromInteraction(
     interaction,
