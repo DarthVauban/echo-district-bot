@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import { BotError } from '../utils/errors.js';
 import { formatDuration } from '../utils/formatters.js';
 import { isYouTubeUrl } from '../utils/validators.js';
@@ -222,9 +223,15 @@ export class YouTubeAudioService {
       ffmpegError = appendLimited(ffmpegError, chunk, MAX_ERROR_BYTES);
     });
 
-    ytdlp.stdout.pipe(ffmpeg.stdin);
-    // Suppress EPIPE when ffmpeg closes its stdin before yt-dlp finishes.
+    // Large buffer so the initial fast download from the CDN fills ~32 seconds
+    // of audio ahead of playback; brief CDN rate-limit stalls at minute
+    // boundaries drain this buffer instead of starving ffmpeg.
+    const audioBuffer = new PassThrough({ highWaterMark: 512 * 1024 });
+
+    ytdlp.stdout.pipe(audioBuffer);
+    audioBuffer.pipe(ffmpeg.stdin);
     ytdlp.stdout.on('error', () => {});
+    audioBuffer.on('error', () => {});
     ffmpeg.stdin.on('error', () => {});
 
     const cleanup = () => {
@@ -233,7 +240,9 @@ export class YouTubeAudioService {
       }
 
       cleanedUp = true;
-      ytdlp.stdout.unpipe(ffmpeg.stdin);
+      ytdlp.stdout.unpipe(audioBuffer);
+      audioBuffer.unpipe(ffmpeg.stdin);
+      audioBuffer.destroy();
 
       if (ytdlp.exitCode === null) {
         ytdlp.kill();
