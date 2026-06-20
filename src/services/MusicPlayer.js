@@ -586,11 +586,17 @@ export class MusicPlayer {
             logger.info('Finished track', details);
           }
 
-          if (endedPrematurely && playedSeconds === 0 && state.currentTrackRetries < 1) {
+          const shouldRetry = state.currentTrackRetries < 1 && (
+            (endedPrematurely && playedSeconds === 0)
+            || state.endReason === 'epipe'
+          );
+
+          if (shouldRetry) {
             retryTrack = state.currentTrack;
           }
         }
 
+        const endReason = state.endReason;
         this.#cleanupPlayback(state);
         state.currentTrack = null;
         state.audioResource = null;
@@ -600,10 +606,11 @@ export class MusicPlayer {
         if (retryTrack) {
           state.currentTrackRetries += 1;
           state.queue.unshift(retryTrack);
-          logger.info('Retrying track after immediate EOF', {
+          logger.info('Retrying track', {
             guildId: state.guildId,
             title: retryTrack.title,
             attempt: state.currentTrackRetries,
+            reason: endReason ?? 'premature-eof',
           });
         } else {
           state.currentTrackRetries = 0;
