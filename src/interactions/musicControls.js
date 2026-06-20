@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  MessageFlags,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -93,7 +94,7 @@ export async function handleMusicButton(interaction, dependencies) {
       if (!changed) {
         await interaction.followUp({
           content: '⚠️ Немає активного треку для перемикання',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       break;
@@ -107,7 +108,7 @@ export async function handleMusicButton(interaction, dependencies) {
       if (!skipped) {
         await interaction.followUp({
           content: '⚠️ Зараз нічого не грає',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       break;
@@ -149,7 +150,7 @@ export async function handleMusicModal(interaction, dependencies) {
     if (!/^\d{1,3}$/.test(rawValue) || !Number.isInteger(value) || value < 0 || value > 100) {
       await interaction.reply({
         content: '❌ Введи ціле число від 0 до 100',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return true;
     }
@@ -157,14 +158,14 @@ export async function handleMusicModal(interaction, dependencies) {
     dependencies.musicPlayer.setVolume(interaction.guildId, value);
     await interaction.reply({
       content: `🔊 Гучність встановлено на ${value}%`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     await dependencies.musicPlayer.refreshControlPanel(interaction.guildId);
     return true;
   }
 
   const url = interaction.fields.getTextInputValue(MUSIC_CONTROL_IDS.urlInput).trim();
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const { result, track } = await requestTrackFromInteraction(
     interaction,

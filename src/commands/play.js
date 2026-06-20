@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { formatTrackTitle } from '../utils/formatters.js';
 import { respond } from '../utils/interactions.js';
 import { requestTrackFromInteraction } from '../utils/trackRequests.js';
@@ -14,7 +14,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction, { musicPlayer, youtubeAudioService }) {
   const url = interaction.options.getString('url', true).trim();
   youtubeAudioService.validateUrl(url);
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const { result, track } = await requestTrackFromInteraction(
     interaction,

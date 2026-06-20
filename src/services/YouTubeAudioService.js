@@ -150,6 +150,9 @@ export class YouTubeAudioService {
       '-hide_banner',
       '-loglevel',
       'error',
+      '-nostdin',
+      '-threads',
+      '1',
       '-reconnect',
       '1',
       '-reconnect_streamed',
@@ -172,12 +175,26 @@ export class YouTubeAudioService {
       '-i',
       source.url,
       '-vn',
-      '-ac',
-      '2',
-      '-ar',
-      '48000',
+      '-sn',
+      '-dn',
+      '-map',
+      '0:a:0',
+      '-c:a',
+      source.audioCodec === 'opus' ? 'copy' : 'libopus',
+    );
+
+    if (source.audioCodec !== 'opus') {
+      ffmpegArgs.push(
+        '-b:a',
+        '128k',
+        '-application',
+        'audio',
+      );
+    }
+
+    ffmpegArgs.push(
       '-f',
-      's16le',
+      'ogg',
       'pipe:1',
     );
 
@@ -242,12 +259,15 @@ export class YouTubeAudioService {
 
     return {
       stream: ffmpeg.stdout,
+      inputType: 'ogg/opus',
       processes: { ffmpeg },
       cleanup,
       diagnostics() {
         return {
           ffmpegError: ffmpegError.trim(),
           sourceProtocol: source.protocol,
+          sourceAudioCodec: source.audioCodec,
+          outputType: 'ogg/opus',
         };
       },
     };
@@ -268,7 +288,7 @@ export class YouTubeAudioService {
         '--extractor-retries',
         '3',
         '-f',
-        'bestaudio/best',
+        'bestaudio[acodec=opus]/bestaudio/best',
         '--',
         url,
       ],
@@ -352,10 +372,12 @@ export class YouTubeAudioService {
     const headers = selected.http_headers
       || selected.requested_downloads?.[0]?.http_headers
       || {};
+    const selectedDownload = selected.requested_downloads?.[0] || {};
 
     return {
       url: parsedUrl.toString(),
       protocol: selected.protocol || parsedUrl.protocol.replace(':', ''),
+      audioCodec: selected.acodec || selectedDownload.acodec || null,
       userAgent: typeof headers['User-Agent'] === 'string'
         ? headers['User-Agent'].replace(/[\r\n]/g, '')
         : null,

@@ -1,9 +1,9 @@
-import { PermissionsBitField } from 'discord.js';
+import { MessageFlags, PermissionsBitField } from 'discord.js';
 import { BotError } from './errors.js';
 
 export async function respond(interaction, content, { ephemeral = false } = {}) {
   if (interaction.isMessageComponent?.() && interaction.deferred) {
-    return interaction.followUp({ content, ephemeral: true });
+    return interaction.followUp({ content, flags: MessageFlags.Ephemeral });
   }
 
   if (interaction.deferred) {
@@ -11,10 +11,16 @@ export async function respond(interaction, content, { ephemeral = false } = {}) 
   }
 
   if (interaction.replied) {
-    return interaction.followUp({ content, ephemeral });
+    return interaction.followUp({
+      content,
+      ...(ephemeral ? { flags: MessageFlags.Ephemeral } : {}),
+    });
   }
 
-  return interaction.reply({ content, ephemeral });
+  return interaction.reply({
+    content,
+    ...(ephemeral ? { flags: MessageFlags.Ephemeral } : {}),
+  });
 }
 
 export function getMemberVoiceChannel(interaction) {

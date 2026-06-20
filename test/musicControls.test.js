@@ -125,7 +125,7 @@ test('custom-volume modal applies an exact value', async () => {
   assert.equal(handled, true);
   assert.equal(appliedVolume, 37);
   assert.equal(refreshed, true);
-  assert.equal(reply.ephemeral, true);
+  assert.ok(reply.flags);
 });
 
 test('custom-volume modal rejects values outside 0 to 100', async () => {
