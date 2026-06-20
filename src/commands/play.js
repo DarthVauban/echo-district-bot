@@ -1,5 +1,6 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { formatTrackTitle } from '../utils/formatters.js';
+import { logger } from '../utils/logger.js';
 import { respond } from '../utils/interactions.js';
 import { requestTrackFromInteraction } from '../utils/trackRequests.js';
 
@@ -13,6 +14,8 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction, { musicPlayer, youtubeAudioService }) {
   const url = interaction.options.getString('url', true).trim();
+  const ageMs = Date.now() - interaction.createdTimestamp;
+  logger.info('Play command received', { guildId: interaction.guildId, ageMs });
   youtubeAudioService.validateUrl(url);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
