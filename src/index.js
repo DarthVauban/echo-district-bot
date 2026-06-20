@@ -34,17 +34,24 @@ const commandCollection = new Collection(
 client.once(Events.ClientReady, (readyClient) => {
   logger.info('Bot is ready', {
     user: readyClient.user.tag,
+    applicationId: readyClient.application?.id,
     guilds: readyClient.guilds.cache.size,
   });
 
   // Log every failed interaction callback so we can see the exact URL and status.
-  client.rest.on('response', (req, res) => {
+  client.rest.on('response', async (req, res) => {
     if (req.path.includes('/interactions/') && res.status >= 400) {
+      let body;
+      try {
+        body = typeof res.json === 'function' ? await res.json() : undefined;
+      } catch {
+        // ignore body parse errors
+      }
       logger.warn('REST interaction error', {
         method: req.method,
-        // Truncate the token in the path for safety
         path: req.path.replace(/\/interactions\/(\d+)\/([^/]{8})[^/]+\//, '/interactions/$1/$2…/'),
         status: res.status,
+        body,
       });
     }
   });
@@ -53,6 +60,16 @@ client.once(Events.ClientReady, (readyClient) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inGuild()) {
     return;
+  }
+
+  // Detect application ID mismatch (bot token ≠ registered application).
+  const clientAppId = client.application?.id;
+  if (clientAppId && interaction.applicationId !== clientAppId) {
+    logger.error('Application ID mismatch', {
+      interactionAppId: interaction.applicationId,
+      clientAppId,
+      type: interaction.type,
+    });
   }
 
   try {
