@@ -497,9 +497,11 @@ export class MusicPlayer {
       try {
         const pipeline = await this.youtubeAudioService.createAudioStream(track.url);
         const resource = createAudioResource(pipeline.stream, {
-          inputType: pipeline.inputType === 'ogg/opus'
-            ? StreamType.OggOpus
-            : StreamType.Raw,
+          inputType: pipeline.inputType === 'webm/opus'
+            ? StreamType.WebmOpus
+            : pipeline.inputType === 'ogg/opus'
+              ? StreamType.OggOpus
+              : StreamType.Raw,
           inlineVolume: true,
           metadata: track,
         });

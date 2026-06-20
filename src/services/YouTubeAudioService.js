@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { Readable } from 'node:stream';
 import { BotError } from '../utils/errors.js';
 import { formatDuration } from '../utils/formatters.js';
 import { isYouTubeUrl } from '../utils/validators.js';
@@ -146,6 +147,11 @@ export class YouTubeAudioService {
     this.validateUrl(url);
 
     const source = await this.#getDirectAudioSource(url);
+
+    if (source.audioCodec === 'opus' && source.extension === 'webm') {
+      return this.#createDirectWebmOpusStream(source);
+    }
+
     const ffmpegArgs = [
       '-hide_banner',
       '-loglevel',
@@ -195,6 +201,10 @@ export class YouTubeAudioService {
     ffmpegArgs.push(
       '-f',
       'ogg',
+      '-page_duration',
+      '20000',
+      '-flush_packets',
+      '1',
       'pipe:1',
     );
 
@@ -271,6 +281,162 @@ export class YouTubeAudioService {
         };
       },
     };
+  }
+
+  #createDirectWebmOpusStream(source) {
+    const controller = new AbortController();
+    const status = {
+      reconnects: 0,
+      lastError: '',
+      bytesRead: 0,
+    };
+    const stream = Readable.from(
+      this.#readHttpWithReconnect(source, controller.signal, status),
+      { highWaterMark: 64 * 1024 },
+    );
+    let cleanedUp = false;
+
+    const cleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+
+      cleanedUp = true;
+      controller.abort();
+      stream.destroy();
+    };
+
+    return {
+      stream,
+      inputType: 'webm/opus',
+      processes: {},
+      cleanup,
+      diagnostics() {
+        return {
+          reconnects: status.reconnects,
+          lastError: status.lastError,
+          bytesRead: status.bytesRead,
+          sourceProtocol: source.protocol,
+          sourceAudioCodec: source.audioCodec,
+          outputType: 'webm/opus',
+        };
+      },
+    };
+  }
+
+  async *#readHttpWithReconnect(source, signal, status) {
+    let offset = 0;
+    let totalBytes = null;
+    let consecutiveFailures = 0;
+
+    while (!signal.aborted && (totalBytes === null || offset < totalBytes)) {
+      const requestController = new AbortController();
+      const abortRequest = () => requestController.abort();
+      signal.addEventListener('abort', abortRequest, { once: true });
+
+      try {
+        const headers = {
+          Range: `bytes=${offset}-`,
+        };
+
+        if (source.userAgent) {
+          headers['User-Agent'] = source.userAgent;
+        }
+
+        if (source.referer) {
+          headers.Referer = source.referer;
+        }
+
+        const responseTimeout = setTimeout(() => {
+          requestController.abort();
+        }, 20_000);
+        let response;
+
+        try {
+          response = await fetch(source.url, {
+            headers,
+            redirect: 'follow',
+            signal: requestController.signal,
+          });
+        } finally {
+          clearTimeout(responseTimeout);
+        }
+
+        if (!response.ok || (offset > 0 && response.status !== 206)) {
+          throw new Error(`Media server returned HTTP ${response.status}.`);
+        }
+
+        const contentRange = response.headers.get('content-range');
+        const contentLength = Number(response.headers.get('content-length'));
+        const rangeMatch = contentRange?.match(/\/(\d+)$/);
+
+        if (rangeMatch) {
+          totalBytes = Number(rangeMatch[1]);
+        } else if (Number.isFinite(contentLength) && contentLength > 0) {
+          totalBytes = offset + contentLength;
+        }
+
+        if (!response.body) {
+          throw new Error('Media server returned an empty response body.');
+        }
+
+        const reader = response.body.getReader();
+
+        while (!signal.aborted) {
+          const timeout = setTimeout(() => {
+            requestController.abort();
+          }, 20_000);
+          let result;
+
+          try {
+            result = await reader.read();
+          } finally {
+            clearTimeout(timeout);
+          }
+
+          if (result.done) {
+            break;
+          }
+
+          consecutiveFailures = 0;
+          offset += result.value.byteLength;
+          status.bytesRead = offset;
+          yield Buffer.from(result.value);
+        }
+
+        if (signal.aborted || (totalBytes !== null && offset >= totalBytes)) {
+          return;
+        }
+
+        if (totalBytes === null) {
+          return;
+        }
+
+        status.reconnects += 1;
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+
+        consecutiveFailures += 1;
+        status.reconnects += 1;
+        status.lastError = error.message;
+
+        if (consecutiveFailures > 10) {
+          throw new BotError(
+            'AUDIO_STREAM_FAILED',
+            `Direct audio stream failed after retries: ${error.message}`,
+            { cause: error },
+          );
+        }
+      } finally {
+        signal.removeEventListener('abort', abortRequest);
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, Math.min(status.reconnects, 5) * 1_000);
+      });
+    }
   }
 
   async #getDirectAudioSource(url) {
@@ -378,6 +544,7 @@ export class YouTubeAudioService {
       url: parsedUrl.toString(),
       protocol: selected.protocol || parsedUrl.protocol.replace(':', ''),
       audioCodec: selected.acodec || selectedDownload.acodec || null,
+      extension: selected.ext || selectedDownload.ext || null,
       userAgent: typeof headers['User-Agent'] === 'string'
         ? headers['User-Agent'].replace(/[\r\n]/g, '')
         : null,
