@@ -328,8 +328,10 @@ export class YouTubeAudioService {
     let offset = 0;
     let totalBytes = null;
     let consecutiveFailures = 0;
+    let emptyResponseCount = 0;
 
     while (!signal.aborted && (totalBytes === null || offset < totalBytes)) {
+      const offsetBefore = offset;
       const requestController = new AbortController();
       const abortRequest = () => requestController.abort();
       signal.addEventListener('abort', abortRequest, { once: true });
@@ -409,7 +411,11 @@ export class YouTubeAudioService {
         }
 
         if (totalBytes === null) {
-          return;
+          if (offset > 0) {
+            return;
+          }
+          // Received empty response body — mark and fall through to retry
+          status.lastError = 'empty response body';
         }
 
         status.reconnects += 1;
@@ -431,6 +437,18 @@ export class YouTubeAudioService {
         }
       } finally {
         signal.removeEventListener('abort', abortRequest);
+      }
+
+      if (offset === offsetBefore && totalBytes === null) {
+        emptyResponseCount += 1;
+        if (emptyResponseCount > 5) {
+          throw new BotError(
+            'AUDIO_STREAM_FAILED',
+            'Audio stream returned empty responses after retries.',
+          );
+        }
+      } else {
+        emptyResponseCount = 0;
       }
 
       await new Promise((resolve) => {

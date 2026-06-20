@@ -560,6 +560,8 @@ export class MusicPlayer {
   #attachPlayerEvents(state) {
     state.audioPlayer.on(AudioPlayerStatus.Idle, () => {
       state.runExclusive(async () => {
+        let retryTrack = null;
+
         if (state.currentTrack) {
           const playedSeconds = Math.floor(
             (state.audioResource?.playbackDuration ?? 0) / 1000,
@@ -583,6 +585,10 @@ export class MusicPlayer {
           } else {
             logger.info('Finished track', details);
           }
+
+          if (endedPrematurely && playedSeconds === 0 && state.currentTrackRetries < 1) {
+            retryTrack = state.currentTrack;
+          }
         }
 
         this.#cleanupPlayback(state);
@@ -591,8 +597,20 @@ export class MusicPlayer {
         state.isPaused = false;
         state.endReason = null;
 
+        if (retryTrack) {
+          state.currentTrackRetries += 1;
+          state.queue.unshift(retryTrack);
+          logger.info('Retrying track after immediate EOF', {
+            guildId: state.guildId,
+            title: retryTrack.title,
+            attempt: state.currentTrackRetries,
+          });
+        } else {
+          state.currentTrackRetries = 0;
+        }
+
         try {
-          await this.#startNext(state, { announce: true });
+          await this.#startNext(state, { announce: !retryTrack });
         } catch (error) {
           logger.error('Could not advance queue', {
             guildId: state.guildId,
@@ -615,8 +633,11 @@ export class MusicPlayer {
       });
 
       state.runExclusive(async () => {
-        await this.#sendToTextChannel(state, '❌ Відтворення перервано через помилку аудіо');
-        state.endReason = 'player-error';
+        const isEpipe = error.message.includes('EPIPE');
+        state.endReason = isEpipe ? 'epipe' : 'player-error';
+        if (!isEpipe) {
+          await this.#sendToTextChannel(state, '❌ Відтворення перервано через помилку аудіо');
+        }
         state.audioPlayer.stop(true);
       }).catch(() => {});
     });
