@@ -10,7 +10,6 @@ import { formatTrackTitle } from '../utils/formatters.js';
 import { getMemberVoiceChannel } from '../utils/interactions.js';
 import { MUSIC_CONTROL_IDS } from '../utils/musicPanel.js';
 import { requestTrackFromInteraction } from '../utils/trackRequests.js';
-import { logger } from '../utils/logger.js';
 
 function assertCanControl(interaction, musicPlayer) {
   const voiceChannel = getMemberVoiceChannel(interaction);
@@ -69,45 +68,21 @@ export async function handleMusicButton(interaction, dependencies) {
   }
 
   const { musicPlayer } = dependencies;
+  await musicPlayer.attachControlPanel(interaction.guildId, interaction.message);
+  assertCanControl(interaction, musicPlayer);
 
-  // Show modal as the very first Discord call to stay inside the 3-second window.
   if (interaction.customId === MUSIC_CONTROL_IDS.add) {
-    const ageMs = Date.now() - interaction.createdTimestamp;
-    logger.info('Button pressed', {
-      button: interaction.customId,
-      guildId: interaction.guildId,
-      ageMs,
-      wsPing: interaction.client.ws.ping,
-      interactionIdSuffix: interaction.id.slice(-6),
-    });
-    try {
-      await interaction.showModal(createAddTrackModal());
-    } catch (firstErr) {
-      if (firstErr.code !== 10062) throw firstErr;
-      // Retry once after a brief delay in case of Discord cluster replication lag.
-      logger.warn('showModal got 10062, retrying in 200ms', { guildId: interaction.guildId });
-      await new Promise((r) => setTimeout(r, 200));
-      await interaction.showModal(createAddTrackModal());
-    }
-    logger.info('Add modal shown', { guildId: interaction.guildId });
-    musicPlayer.attachControlPanel(interaction.guildId, interaction.message);
+    await interaction.showModal(createAddTrackModal());
     return true;
   }
 
   if (interaction.customId === MUSIC_CONTROL_IDS.volumeCustom) {
-    const ageMs = Date.now() - interaction.createdTimestamp;
-    logger.info('Button pressed', { button: interaction.customId, guildId: interaction.guildId, ageMs, wsPing: interaction.client.ws.ping });
     const currentVolume = musicPlayer.getSnapshot(interaction.guildId).volume;
     await interaction.showModal(createVolumeModal(currentVolume));
-    logger.info('Volume modal shown', { guildId: interaction.guildId });
     return true;
   }
 
-  logger.info('Button pressed', { button: interaction.customId, guildId: interaction.guildId });
-  musicPlayer.attachControlPanel(interaction.guildId, interaction.message);
-  assertCanControl(interaction, musicPlayer);
   await interaction.deferUpdate();
-  logger.info('Button deferred', { button: interaction.customId, guildId: interaction.guildId });
 
   switch (interaction.customId) {
     case MUSIC_CONTROL_IDS.toggle: {
@@ -164,9 +139,9 @@ export async function handleMusicModal(interaction, dependencies) {
     return false;
   }
 
-  if (interaction.customId === MUSIC_CONTROL_IDS.volumeModal) {
-    assertCanControl(interaction, dependencies.musicPlayer);
+  assertCanControl(interaction, dependencies.musicPlayer);
 
+  if (interaction.customId === MUSIC_CONTROL_IDS.volumeModal) {
     const rawValue = interaction.fields
       .getTextInputValue(MUSIC_CONTROL_IDS.volumeInput)
       .trim();
@@ -189,19 +164,8 @@ export async function handleMusicModal(interaction, dependencies) {
     return true;
   }
 
-  // addModal: defer immediately before any other work
   const url = interaction.fields.getTextInputValue(MUSIC_CONTROL_IDS.urlInput).trim();
-  const ageMs = Date.now() - interaction.createdTimestamp;
-  logger.info('Add modal submitted', {
-    guildId: interaction.guildId,
-    url,
-    ageMs,
-    wsPing: interaction.client.ws.ping,
-    interactionIdSuffix: interaction.id.slice(-6),
-  });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  logger.info('Add modal deferred', { guildId: interaction.guildId });
-  assertCanControl(interaction, dependencies.musicPlayer);
 
   const { result, track } = await requestTrackFromInteraction(
     interaction,

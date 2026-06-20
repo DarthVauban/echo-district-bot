@@ -21,6 +21,19 @@ export const MUSIC_CONTROL_IDS = Object.freeze({
   volumeInput: 'music:volume',
 });
 
+export function formatProgressBar(elapsedSeconds, totalSeconds, size = 18) {
+  const safeSize = Math.max(5, Math.min(30, size));
+
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return `🔘${'▬'.repeat(safeSize - 1)}`;
+  }
+
+  const ratio = Math.max(0, Math.min(1, elapsedSeconds / totalSeconds));
+  const markerIndex = Math.min(safeSize - 1, Math.floor(ratio * safeSize));
+
+  return `${'▬'.repeat(markerIndex)}🔘${'▬'.repeat(safeSize - markerIndex - 1)}`;
+}
+
 export function createMusicPanelPayload(snapshot) {
   const track = snapshot.currentTrack;
   const playbackDurationMs = Number.isFinite(snapshot.playbackDurationMs)
@@ -43,9 +56,11 @@ export function createMusicPanelPayload(snapshot) {
     )
     .addFields(
       {
-        name: 'Тривалість',
-        value: hasTrack ? `\`${elapsed} / ${total}\`` : '`0:00 / ?:??`',
-        inline: true,
+        name: 'Прогрес',
+        value: hasTrack
+          ? `${formatProgressBar(elapsedSeconds, totalSeconds)}\n\`${elapsed} / ${total}\``
+          : `${formatProgressBar(0, null)}\n\`0:00 / ?:??\``,
+        inline: false,
       },
       {
         name: 'Гучність',

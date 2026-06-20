@@ -49,12 +49,12 @@ export class YouTubeAudioService {
       '--skip-download',
       '--no-playlist',
       '--no-warnings',
+      '--js-runtimes',
+      'node',
       '--socket-timeout',
       '15',
       '--extractor-retries',
       '2',
-      '--extractor-args',
-      'youtube:player_client=android',
       '--',
       url,
     ];
@@ -108,7 +108,7 @@ export class YouTubeAudioService {
     }
 
     if (result.code !== 0) {
-      const unavailable = /private video|video is unavailable|this video is not available|sign in to confirm|members.?only/i.test(stderr);
+      const unavailable = /private|unavailable|not available|sign in|members-only/i.test(stderr);
       throw new BotError(
         unavailable ? 'YOUTUBE_UNAVAILABLE' : 'METADATA_FAILED',
         stderr.trim() || `yt-dlp exited with code ${result.code}.`,
@@ -154,12 +154,12 @@ export class YouTubeAudioService {
         '--no-playlist',
         '--no-warnings',
         '--quiet',
+        '--js-runtimes',
+        'node',
         '--socket-timeout',
         '15',
         '--extractor-retries',
         '3',
-        '--extractor-args',
-        'youtube:player_client=android',
         '-f',
         'bestaudio[acodec=opus]/bestaudio/best',
         '-o',

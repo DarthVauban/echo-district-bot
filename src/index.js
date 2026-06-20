@@ -34,37 +34,13 @@ const commandCollection = new Collection(
 client.once(Events.ClientReady, (readyClient) => {
   logger.info('Bot is ready', {
     user: readyClient.user.tag,
-    applicationId: readyClient.application?.id,
     guilds: readyClient.guilds.cache.size,
-  });
-
-  // Log every failed interaction callback so we can see the HTTP status.
-  // Keep this handler synchronous — reading res.body here races with @discordjs/rest's
-  // own body consumption and causes assert(!stream[kConsume]) crashes.
-  client.rest.on('response', (req, res) => {
-    if (req.path.includes('/interactions/') && res.status >= 400) {
-      logger.warn('REST interaction error', {
-        method: req.method,
-        path: req.path.replace(/\/interactions\/(\d+)\/([^/]{8})[^/]+\//, '/interactions/$1/$2…/'),
-        status: res.status,
-      });
-    }
   });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inGuild()) {
     return;
-  }
-
-  // Detect application ID mismatch (bot token ≠ registered application).
-  const clientAppId = client.application?.id;
-  if (clientAppId && interaction.applicationId !== clientAppId) {
-    logger.error('Application ID mismatch', {
-      interactionAppId: interaction.applicationId,
-      clientAppId,
-      type: interaction.type,
-    });
   }
 
   try {
@@ -96,14 +72,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await command.execute(interaction, dependencies);
   } catch (error) {
-    if (error.code === 10062 || error.code === 40060) {
-      logger.warn(`Interaction dead (${error.code})`, {
-        command: interaction.commandName ?? interaction.customId ?? interaction.type,
-        httpStatus: error.status,
-      });
-      return;
-    }
-
     logger.error('Command failed', {
       command: interaction.commandName ?? interaction.customId ?? interaction.type,
       guildId: interaction.guildId,
@@ -115,30 +83,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await respond(interaction, getPublicErrorMessage(error), { ephemeral: true });
     } catch (replyError) {
-      if (replyError.message !== 'Interaction has already been acknowledged.') {
-        logger.error('Could not send command error response', {
-          command: interaction.commandName ?? interaction.customId ?? interaction.type,
-          message: replyError.message,
-        });
-      }
+      logger.error('Could not send command error response', {
+        command: interaction.commandName ?? interaction.customId ?? interaction.type,
+        message: replyError.message,
+      });
     }
   }
 });
 
 client.on(Events.Error, (error) => {
   logger.error('Discord client error', error);
-});
-
-client.on(Events.ShardDisconnect, (event, id) => {
-  logger.warn('Gateway disconnected', { shardId: id, code: event.code, reason: event.reason });
-});
-
-client.on(Events.ShardResume, (id, replayed) => {
-  logger.info('Gateway resumed', { shardId: id, replayedEvents: replayed });
-});
-
-client.on(Events.ShardReconnecting, (id) => {
-  logger.info('Gateway reconnecting', { shardId: id });
 });
 
 let shuttingDown = false;
